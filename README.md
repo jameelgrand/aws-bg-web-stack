@@ -44,7 +44,7 @@ UserData and deployment logic is for demo purposes only. Modify as needed for ac
 
 6. Deploy Lambda with runtime `Python 2.7`, handler `elbattachment.main` and role `lambda-autoscaling-elbattachment`
 
-7. Deploy web stack, referencing previously configured resources. UserData uses apt-get and ufw so an Ubuntu AMI ought
-to be used. Specify e.g. `v1.0.0` for ReleaseX parameter for testing.
+7. Deploy web stack, referencing previously configured resources. UserData uses `apt-get` and `ufw` so an Ubuntu AMI
+ought to be used. Specify e.g. `v1.0.0` for ReleaseX parameter for testing.
 
 8. Test via live/staging DNS names, run stack updates to switch between ASGs
