@@ -101,34 +101,6 @@
         "AWS::CloudFormation::Interface" : {
             "ParameterGroups" : [
                 {
-                    "Label" : { "default" : "Deployment" },
-                    "Parameters" : [
-                        "Environment"
-                    ]
-                },
-                {
-                    "Label" : { "default" : "Load balancing" },
-                    "Parameters" : [
-                        "ElbSubnets",
-                        "ElbSecurityGroups",
-                        "LiveElbAsgAttachment",
-                        "StagingElbAsgAttachment"
-                    ]
-                },
-                {
-                    "Label" : { "default" : "Autoscaling" },
-                    "Parameters" : [
-                        "InstanceType",
-                        "InstanceSubnets",
-                        "InstanceSecurityGroups",
-                        "SshKeyPair",
-                        "MinNumInstances",
-                        "MaxNumInstances",
-                        "ScaleDownThreshold",
-                        "ScaleUpThreshold"
-                    ]
-                },
-                {
                     "Label" : { "default" : "Autoscaling group A" },
                     "Parameters" : [
                         "AmiA",
@@ -140,6 +112,29 @@
                     "Parameters" : [
                         "AmiB",
                         "ReleaseB"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Load balancing" },
+                    "Parameters" : [
+                        "LiveElbAsgAttachment",
+                        "StagingElbAsgAttachment"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Configuration" },
+                    "Parameters" : [
+                        "Environment",
+                        "ElbSubnets",
+                        "ElbSecurityGroups",
+                        "InstanceType",
+                        "InstanceSubnets",
+                        "InstanceSecurityGroups",
+                        "SshKeyPair",
+                        "MinNumInstances",
+                        "MaxNumInstances",
+                        "ScaleDownThreshold",
+                        "ScaleUpThreshold"
                     ]
                 }
             ]
