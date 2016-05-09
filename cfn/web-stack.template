@@ -69,11 +69,11 @@
         },
         "AmiA" : {
             "Type" : "String",
-            "Description" : "AMI id (Ubuntu 14.04 HVM EBS)"
+            "Description" : "AMI id (Ubuntu 14.04 HVM EBS, see https://cloud-images.ubuntu.com/locator/ec2/)"
         },
         "AmiB" : {
             "Type" : "String",
-            "Description" : "AMI id (Ubuntu 14.04 HVM EBS)"
+            "Description" : "AMI id (Ubuntu 14.04 HVM EBS, see https://cloud-images.ubuntu.com/locator/ec2/)"
         },
         "ReleaseA" : {
             "Type" : "String",
@@ -101,7 +101,7 @@
         "AWS::CloudFormation::Interface" : {
             "ParameterGroups" : [
                 {
-                    "Label" : { "default" : "General" },
+                    "Label" : { "default" : "Deployment" },
                     "Parameters" : [
                         "Environment"
                     ]
@@ -147,8 +147,14 @@
     },
 
     "Conditions" : {
-        "CreateAsgA" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseA" }, "" ] } ] },
-        "CreateAsgB" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseB" }, "" ] } ] }
+        "CreateAsgA" : { "Fn::And" : [
+            { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "AmiA" }, "" ] } ] },
+            { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseA" }, "" ] } ] }
+        ]},
+        "CreateAsgB" : { "Fn::And" : [
+            { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "AmiB" }, "" ] } ] },
+            { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseB" }, "" ] } ] }
+        ]}
     },
 
     "Resources" : {

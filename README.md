@@ -1,14 +1,18 @@
 
 # Blue/green autoscaling web stack
 
-The stack runs two ELBs: `live` and `staging`. Their DNS names are provided as stack outputs. Live ELB is used to
-serve production traffic and staging ELB is used to provide a preview to a new release for testing. Two autoscaling
-groups, `A` and `B` can be deployed and attached dynamically to said ELBs, to provide blue/green deployment for new
-software releases and AMI updates. ELB attachment is managed by a Lambda-backed custom CloudFormation resource.
+This CloudFormation stack runs two ELBs: `live` and `staging`. Their DNS names are provided as stack outputs. Live
+ELB is used to serve production traffic and staging ELB is used to provide a preview to a new release for testing. Two
+autoscaling groups, `A` and `B` can be deployed and attached dynamically to said ELBs, to provide blue/green deployment
+for new software releases and AMI updates. ELB attachment is managed by a Lambda-backed custom CloudFormation resource.
 
 ELB attachment is always modified so that new ASG is first attached to the ELB, and then the other ASG is detached
 from the ELB. Hence there will be a small period of time during which both ASGs are attached to the ELB. Maintenance
 mode is supported, which detaches all ASGs from the ELB, which in turn makes the ELB return `503 Service Unavailable`.
+
+Autoscaling group lifecycle is managed by `AmiX` and `ReleaseX` parameters. If either is empty, said ASG is deleted.
+
+UserData and deployment logic is for demo purposes only. Modify as needed for actual deployments.
 
 ## How-to deploy and test the stack
 
@@ -40,6 +44,7 @@ mode is supported, which detaches all ASGs from the ELB, which in turn makes the
 
 6. Deploy Lambda with runtime `Python 2.7`, handler `elbattachment.main` and role `lambda-autoscaling-elbattachment`
 
-7. Deploy web stack, referencing previously configured resources
+7. Deploy web stack, referencing previously configured resources. UserData uses apt-get and ufw so an Ubuntu AMI ought
+to be used. Specify e.g. `v1.0.0` for ReleaseX parameter for testing.
 
 8. Test via live/staging DNS names, run stack updates to switch between ASGs
