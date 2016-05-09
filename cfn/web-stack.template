@@ -1,0 +1,557 @@
+{
+
+    "AWSTemplateFormatVersion" : "2010-09-09",
+    "Description" : "Blue/green autoscaling web stack",
+
+    "Parameters" : {
+        "Environment" : {
+            "Type" : "String",
+            "Description" : "Deployment environment",
+            "AllowedValues" : [ "Development", "Production" ],
+            "Default" : "Development"
+        },
+        "ElbSubnets" : {
+            "Type" : "List<AWS::EC2::Subnet::Id>",
+            "Description" : "ELB subnets (public)"
+        },
+        "ElbSecurityGroups" : {
+            "Type" : "List<AWS::EC2::SecurityGroup::Id>",
+            "Description" : "ELB security groups"
+        },
+        "InstanceSubnets" : {
+            "Type" : "List<AWS::EC2::Subnet::Id>",
+            "Description" : "Instance subnets (private)"
+        },
+        "InstanceSecurityGroups" : {
+            "Type" : "List<AWS::EC2::SecurityGroup::Id>",
+            "Description" : "Instance security groups"
+        },
+        "InstanceType" : {
+            "Type" : "String",
+            "Description" : "Instance type",
+            "AllowedValues" : [
+                "t2.nano", "t2.micro", "t2.small", "t2.medium", "t2.large", "m3.medium", "m4.large",
+                "m4.xlarge", "m4.2xlarge", "m4.4xlarge", "m4.10xlarge", "c4.large", "c4.xlarge", "c4.2xlarge",
+                "c4.4xlarge", "c4.8xlarge", "r3.large", "r3.xlarge", "r3.2xlarge", "r3.4xlarge", "r3.8xlarge"
+            ],
+            "Default" : "t2.medium"
+        },
+        "SshKeyPair" : {
+            "Type" : "AWS::EC2::KeyPair::KeyName",
+            "Description" : "SSH key pair",
+            "AllowedPattern" : "\\S+"
+        },
+        "MinNumInstances" : {
+            "Type" : "Number",
+            "Description" : "Minimum number of instances",
+            "MinValue" : "1",
+            "Default" : "1"
+        },
+        "MaxNumInstances" : {
+            "Type" : "Number",
+            "Description" : "Maximum number of instances",
+            "MinValue" : "1",
+            "Default" : "2"
+        },
+        "ScaleDownThreshold" : {
+            "Type" : "Number",
+            "Description" : "Average instance CPU utilization % to trigger scale down",
+            "MinValue" : "5",
+            "MaxValue" : "95",
+            "Default" : "30"
+        },
+        "ScaleUpThreshold" : {
+            "Type" : "Number",
+            "Description" : "Average instance CPU utilization % to trigger scale up",
+            "MinValue" : "5",
+            "MaxValue" : "95",
+            "Default" : "60"
+        },
+        "AmiA" : {
+            "Type" : "String",
+            "Description" : "AMI id (Ubuntu 14.04 HVM EBS)"
+        },
+        "AmiB" : {
+            "Type" : "String",
+            "Description" : "AMI id (Ubuntu 14.04 HVM EBS)"
+        },
+        "ReleaseA" : {
+            "Type" : "String",
+            "Description" : "Release (arbitrary version indicator, e.g. Git tag or S3 path, leave empty to delete ASG)"
+        },
+        "ReleaseB" : {
+            "Type" : "String",
+            "Description" : "Release (arbitrary version indicator, e.g. Git tag or S3 path, leave empty to delete ASG)"
+        },
+        "LiveElbAttachment" : {
+            "Type" : "String",
+            "Description" : "Live ELB attachment. Select Maintenance to force HTTP 503 Service Unavailable",
+            "AllowedValues" : [ "Maintenance", "AsgA", "AsgB" ],
+            "Default" : "Maintenance"
+        },
+        "StagingElbAttachment" : {
+            "Type" : "String",
+            "Description" : "Staging ELB attachment. Select Maintenance to force HTTP 503 Service Unavailable",
+            "AllowedValues" : [ "Maintenance", "AsgA", "AsgB" ],
+            "Default" : "Maintenance"
+        }
+    },
+
+    "Metadata" : {
+        "AWS::CloudFormation::Interface" : {
+            "ParameterGroups" : [
+                {
+                    "Label" : { "default" : "General" },
+                    "Parameters" : [
+                        "Environment"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Load balancing" },
+                    "Parameters" : [
+                        "ElbSubnets",
+                        "ElbSecurityGroups",
+                        "LiveElbAttachment",
+                        "StagingElbAttachment"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Autoscaling" },
+                    "Parameters" : [
+                        "InstanceType",
+                        "InstanceSubnets",
+                        "InstanceSecurityGroups",
+                        "SshKeyPair",
+                        "MinNumInstances",
+                        "MaxNumInstances",
+                        "ScaleDownThreshold",
+                        "ScaleUpThreshold"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Autoscaling group A" },
+                    "Parameters" : [
+                        "AmiA",
+                        "ReleaseA"
+                    ]
+                },
+                {
+                    "Label" : { "default" : "Autoscaling group B" },
+                    "Parameters" : [
+                        "AmiB",
+                        "ReleaseB"
+                    ]
+                }
+            ]
+        }
+    },
+
+    "Conditions" : {
+        "CreateAsgA" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseA" }, "" ] } ] },
+        "CreateAsgB" : { "Fn::Not" : [ { "Fn::Equals" : [ { "Ref" : "ReleaseB" }, "" ] } ] }
+    },
+
+    "Resources" : {
+        "LiveElb" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties" : {
+                "CrossZone" : "true",
+                "Scheme" : "internet-facing",
+                "Subnets" : { "Ref" : "ElbSubnets" },
+                "SecurityGroups" : { "Ref" : "ElbSecurityGroups" },
+                "Listeners" : [
+                    {
+                        "LoadBalancerPort" : "80",
+                        "InstancePort" : "80",
+                        "Protocol" : "HTTP"
+                    }
+                ],
+                "HealthCheck" : {
+                    "Target" : "HTTP:80/",
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "3",
+                    "Interval" : "15",
+                    "Timeout" : "5"
+                },
+                "ConnectionDrainingPolicy" : {
+                    "Enabled" : true,
+                    "Timeout" : 60
+                },
+                "ConnectionSettings" : {
+                    "IdleTimeout" : 60
+                }
+            }
+        },
+        "StagingElb" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "Properties" : {
+                "CrossZone" : "true",
+                "Scheme" : "internet-facing",
+                "Subnets" : { "Ref" : "ElbSubnets" },
+                "SecurityGroups" : { "Ref" : "ElbSecurityGroups" },
+                "Listeners" : [
+                    {
+                        "LoadBalancerPort" : "80",
+                        "InstancePort" : "80",
+                        "Protocol" : "HTTP"
+                    }
+                ],
+                "HealthCheck" : {
+                    "Target" : "HTTP:80/",
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "3",
+                    "Interval" : "15",
+                    "Timeout" : "5"
+                },
+                "ConnectionDrainingPolicy" : {
+                    "Enabled" : true,
+                    "Timeout" : 60
+                },
+                "ConnectionSettings" : {
+                    "IdleTimeout" : 60
+                }
+            }
+        },
+        "AsgA" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Condition" : "CreateAsgA",
+            "CreationPolicy" : {
+                "ResourceSignal" : {
+                    "Count" : { "Ref" : "MinNumInstances" },
+                    "Timeout" : "PT10M"
+                }
+            },
+            "Properties" : {
+                "MinSize" : { "Ref" : "MinNumInstances" },
+                "MaxSize" : { "Ref" : "MaxNumInstances" },
+                "VPCZoneIdentifier" : { "Ref" : "InstanceSubnets" },
+                "LaunchConfigurationName" : { "Ref" : "LaunchConfigA" },
+                "HealthCheckGracePeriod" : 600,
+                "HealthCheckType" : "ELB",
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : "Instance (A)",
+                        "PropagateAtLaunch" : true
+                    }
+                ]
+            }
+        },
+        "AsgB" : {
+            "Type" : "AWS::AutoScaling::AutoScalingGroup",
+            "Condition" : "CreateAsgB",
+            "CreationPolicy" : {
+                "ResourceSignal" : {
+                    "Count" : { "Ref" : "MinNumInstances" },
+                    "Timeout" : "PT10M"
+                }
+            },
+            "Properties" : {
+                "MinSize" : { "Ref" : "MinNumInstances" },
+                "MaxSize" : { "Ref" : "MaxNumInstances" },
+                "VPCZoneIdentifier" : { "Ref" : "InstanceSubnets" },
+                "LaunchConfigurationName" : { "Ref" : "LaunchConfigB" },
+                "HealthCheckGracePeriod" : 600,
+                "HealthCheckType" : "ELB",
+                "Tags" : [
+                    {
+                        "Key" : "Name",
+                        "Value" : "Instance (B)",
+                        "PropagateAtLaunch" : true
+                    }
+                ]
+            }
+        },
+        "LaunchConfigA" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Condition" : "CreateAsgA",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                        "files" : {
+                            "/etc/cfn-metadata.yml" : {
+                                "content" : { "Fn::Join" : ["\n", [
+                                    "environment: {{ environment }}",
+                                    "release: {{ release }}",
+                                    "asg: {{ asg }}"
+                                ]]},
+                                "context" : {
+                                    "environment" : { "Ref" : "Environment" },
+                                    "release" : { "Ref" : "ReleaseA" },
+                                    "asg" : "A"
+                                },
+                                "mode" : "000600",
+                                "owner" : "root",
+                                "group" : "root"
+                            },
+                            "/usr/local/bin/deploy.sh" : {
+                                "content" : { "Fn::Join" : ["\n", [
+                                    "#!/bin/sh",
+                                    "apt-get update",
+                                    "apt-get -y install apache2",
+                                    "cat /etc/cfn-metadata.yml > /var/www/html/index.html",
+                                    "ufw allow http",
+                                    "ufw enable"
+                                ]]},
+                                "mode" : "000755",
+                                "owner" : "root",
+                                "group" : "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties" : {
+                "ImageId" : { "Ref" : "AmiA" },
+                "InstanceType" : { "Ref" : "InstanceType" },
+                "SecurityGroups" : { "Ref" : "InstanceSecurityGroups" },
+                "KeyName" : { "Ref" : "SshKeyPair" },
+                "BlockDeviceMappings" : [
+                    {
+                        "DeviceName" : "/dev/sda1",
+                        "Ebs" : {
+                            "VolumeSize" : "8",
+                            "VolumeType" : "gp2"
+                        }
+                    }
+                ],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+                    "#!/bin/sh", "\n",
+                    "apt-get update", "\n",
+                    "apt-get install -y python-setuptools", "\n",
+                    "/usr/bin/easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz", "\n",
+                    "/usr/local/bin/cfn-init --resource LaunchConfigA --stack ",
+                        { "Ref" : "AWS::StackId" }, " --region ", { "Ref" : "AWS::Region" }, "\n",
+                    "/usr/local/bin/deploy.sh > /var/log/deploy.log 2>&1", "\n",
+                    "/usr/local/bin/cfn-signal --exit-code $?",
+                    " --region ", { "Ref" : "AWS::Region" },
+                    " --stack ", { "Ref" : "AWS::StackName" },
+                    " --resource AsgA\n"
+                ]]}}
+            }
+        },
+        "LaunchConfigB" : {
+            "Type" : "AWS::AutoScaling::LaunchConfiguration",
+            "Condition" : "CreateAsgB",
+            "Metadata" : {
+                "AWS::CloudFormation::Init" : {
+                    "config" : {
+                        "files" : {
+                            "/etc/cfn-metadata.yml" : {
+                                "content" : { "Fn::Join" : ["\n", [
+                                    "environment: {{ environment }}",
+                                    "release: {{ release }}",
+                                    "asg: {{ asg }}"
+                                ]]},
+                                "context" : {
+                                    "environment" : { "Ref" : "Environment" },
+                                    "release" : { "Ref" : "ReleaseB" },
+                                    "asg" : "B"
+                                },
+                                "mode" : "000600",
+                                "owner" : "root",
+                                "group" : "root"
+                            },
+                            "/usr/local/bin/deploy.sh" : {
+                                "content" : { "Fn::Join" : ["\n", [
+                                    "#!/bin/sh",
+                                    "apt-get update",
+                                    "apt-get -y install apache2",
+                                    "cat /etc/cfn-metadata.yml > /var/www/html/index.html",
+                                    "ufw allow http",
+                                    "ufw enable"
+                                ]]},
+                                "mode" : "000755",
+                                "owner" : "root",
+                                "group" : "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties" : {
+                "ImageId" : { "Ref" : "AmiB" },
+                "InstanceType" : { "Ref" : "InstanceType" },
+                "SecurityGroups" : { "Ref" : "InstanceSecurityGroups" },
+                "KeyName" : { "Ref" : "SshKeyPair" },
+                "BlockDeviceMappings" : [
+                    {
+                        "DeviceName" : "/dev/sda1",
+                        "Ebs" : {
+                            "VolumeSize" : "8",
+                            "VolumeType" : "gp2"
+                        }
+                    }
+                ],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : [ "", [
+                    "#!/bin/sh", "\n",
+                    "apt-get update", "\n",
+                    "apt-get install -y python-setuptools", "\n",
+                    "/usr/bin/easy_install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz", "\n",
+                    "/usr/local/bin/cfn-init --resource LaunchConfigB --stack ",
+                        { "Ref" : "AWS::StackId" }, " --region ", { "Ref" : "AWS::Region" }, "\n",
+                    "/usr/local/bin/deploy.sh > /var/log/deploy.log 2>&1", "\n",
+                    "/usr/local/bin/cfn-signal --exit-code $?",
+                    " --region ", { "Ref" : "AWS::Region" },
+                    " --stack ", { "Ref" : "AWS::StackName" },
+                    " --resource AsgB\n"
+                ]]}}
+            }
+        },
+        "CpuAlarmHighA" : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Condition" : "CreateAsgA",
+            "Properties" : {
+                "MetricName" : "CPUUtilization",
+                "Namespace" : "AWS/EC2",
+                "Statistic" : "Average",
+                "Period" : "60",
+                "EvaluationPeriods" : "2",
+                "Threshold" : { "Ref" : "ScaleUpThreshold" },
+                "AlarmActions" : [{
+                    "Ref" : "ScaleUpPolicyA"
+                }],
+                "Dimensions" : [{
+                    "Name" : "AutoScalingGroupName",
+                    "Value" : { "Ref" : "AsgA" }
+                }],
+                "ComparisonOperator" : "GreaterThanThreshold"
+            }
+        },
+        "CpuAlarmHighB" : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Condition" : "CreateAsgB",
+            "Properties" : {
+                "MetricName" : "CPUUtilization",
+                "Namespace" : "AWS/EC2",
+                "Statistic" : "Average",
+                "Period" : "60",
+                "EvaluationPeriods" : "2",
+                "Threshold" : { "Ref" : "ScaleUpThreshold" },
+                "AlarmActions" : [{
+                    "Ref" : "ScaleUpPolicyB"
+                }],
+                "Dimensions" : [{
+                    "Name" : "AutoScalingGroupName",
+                    "Value" : { "Ref" : "AsgB" }
+                }],
+                "ComparisonOperator" : "GreaterThanThreshold"
+            }
+        },
+        "CpuAlarmLowA" : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Condition" : "CreateAsgA",
+            "Properties" : {
+                "MetricName" : "CPUUtilization",
+                "Namespace" : "AWS/EC2",
+                "Statistic" : "Average",
+                "Period" : "60",
+                "EvaluationPeriods" : "10",
+                "Threshold" : { "Ref" : "ScaleDownThreshold" },
+                "AlarmActions" : [{
+                    "Ref" : "ScaleDownPolicyA"
+                }],
+                "Dimensions" : [{
+                    "Name" : "AutoScalingGroupName",
+                    "Value" : { "Ref" : "AsgA" }
+                }],
+                "ComparisonOperator" : "LessThanThreshold"
+            }
+        },
+        "CpuAlarmLowB" : {
+            "Type" : "AWS::CloudWatch::Alarm",
+            "Condition" : "CreateAsgB",
+            "Properties" : {
+                "MetricName" : "CPUUtilization",
+                "Namespace" : "AWS/EC2",
+                "Statistic" : "Average",
+                "Period" : "60",
+                "EvaluationPeriods" : "10",
+                "Threshold" : { "Ref" : "ScaleDownThreshold" },
+                "AlarmActions" : [{
+                    "Ref" : "ScaleDownPolicyB"
+                }],
+                "Dimensions" : [{
+                    "Name" : "AutoScalingGroupName",
+                    "Value" : { "Ref" : "AsgB" }
+                }],
+                "ComparisonOperator" : "LessThanThreshold"
+            }
+        },
+        "ScaleUpPolicyA" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition" : "CreateAsgA",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "AsgA" },
+                "Cooldown" : "600",
+                "ScalingAdjustment" : "1"
+            }
+        },
+        "ScaleUpPolicyB" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition" : "CreateAsgB",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "AsgB" },
+                "Cooldown" : "600",
+                "ScalingAdjustment" : "1"
+            }
+        },
+        "ScaleDownPolicyA" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition" : "CreateAsgA",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "AsgA" },
+                "Cooldown" : "300",
+                "ScalingAdjustment" : "-1"
+            }
+        },
+        "ScaleDownPolicyB" : {
+            "Type" : "AWS::AutoScaling::ScalingPolicy",
+            "Condition" : "CreateAsgB",
+            "Properties" : {
+                "AdjustmentType" : "ChangeInCapacity",
+                "AutoScalingGroupName" : { "Ref" : "AsgB" },
+                "Cooldown" : "300",
+                "ScalingAdjustment" : "-1"
+            }
+        },
+        "LiveElbAttachment" : {
+            "Type" : "Custom::ElbAttachment",
+            "Properties" : {
+                "ServiceToken" : { "Fn::Join" : [ ":", [ "arn", "aws", "lambda",
+                    { "Ref" : "AWS::Region" }, { "Ref" : "AWS::AccountId" }, "function", "elbattachment" ] ] },
+                "AsgA" : { "Fn::If" : [ "CreateAsgA", { "Ref" : "AsgA" }, { "Ref" : "AWS::NoValue" } ] },
+                "AsgB" : { "Fn::If" : [ "CreateAsgB", { "Ref" : "AsgB" }, { "Ref" : "AWS::NoValue" } ] },
+                "ActiveAsg" : { "Ref" : "LiveElbAttachment" },
+                "AwsRegion" : { "Ref" : "AWS::Region" },
+                "Elbs" : [ { "Ref" : "LiveElb" } ]
+            }
+        },
+        "StagingElbAttachment" : {
+            "Type" : "Custom::ElbAttachment",
+            "Properties" : {
+                "ServiceToken" : { "Fn::Join" : [ ":", [ "arn", "aws", "lambda",
+                    { "Ref" : "AWS::Region" }, { "Ref" : "AWS::AccountId" }, "function", "elbattachment" ] ] },
+                "AsgA" : { "Fn::If" : [ "CreateAsgA", { "Ref" : "AsgA" }, { "Ref" : "AWS::NoValue" } ] },
+                "AsgB" : { "Fn::If" : [ "CreateAsgB", { "Ref" : "AsgB" }, { "Ref" : "AWS::NoValue" } ] },
+                "ActiveAsg" : { "Ref" : "StagingElbAttachment" },
+                "AwsRegion" : { "Ref" : "AWS::Region" },
+                "Elbs" : [ { "Ref" : "StagingElb" } ]
+            }
+        }
+    },
+
+    "Outputs" : {
+        "LiveElbDnsName" : {
+            "Description": "Live ELB DNS name",
+            "Value" : { "Fn::GetAtt" : [ "LiveElb", "DNSName" ] }
+        },
+        "StagingElbDnsName" : {
+            "Description": "Staging ELB DNS name",
+            "Value" : { "Fn::GetAtt" : [ "StagingElb", "DNSName" ] }
+        }
+    }
+}

@@ -1,0 +1,4 @@
+*
+!build-lambda-zip.sh
+!.gitignore
+!elbattachment.py
