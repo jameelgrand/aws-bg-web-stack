@@ -83,13 +83,13 @@
             "Type" : "String",
             "Description" : "Release (arbitrary version indicator, e.g. Git tag or S3 path, leave empty to delete ASG)"
         },
-        "LiveElbAttachment" : {
+        "LiveElbAsgAttachment" : {
             "Type" : "String",
             "Description" : "Live ELB attachment. Select Maintenance to force HTTP 503 Service Unavailable",
             "AllowedValues" : [ "Maintenance", "AsgA", "AsgB" ],
             "Default" : "Maintenance"
         },
-        "StagingElbAttachment" : {
+        "StagingElbAsgAttachment" : {
             "Type" : "String",
             "Description" : "Staging ELB attachment. Select Maintenance to force HTTP 503 Service Unavailable",
             "AllowedValues" : [ "Maintenance", "AsgA", "AsgB" ],
@@ -111,8 +111,8 @@
                     "Parameters" : [
                         "ElbSubnets",
                         "ElbSecurityGroups",
-                        "LiveElbAttachment",
-                        "StagingElbAttachment"
+                        "LiveElbAsgAttachment",
+                        "StagingElbAsgAttachment"
                     ]
                 },
                 {
@@ -531,7 +531,7 @@
                     { "Ref" : "AWS::Region" }, { "Ref" : "AWS::AccountId" }, "function", "elbattachment" ] ] },
                 "AsgA" : { "Fn::If" : [ "CreateAsgA", { "Ref" : "AsgA" }, { "Ref" : "AWS::NoValue" } ] },
                 "AsgB" : { "Fn::If" : [ "CreateAsgB", { "Ref" : "AsgB" }, { "Ref" : "AWS::NoValue" } ] },
-                "ActiveAsg" : { "Ref" : "LiveElbAttachment" },
+                "ActiveAsg" : { "Ref" : "LiveElbAsgAttachment" },
                 "AwsRegion" : { "Ref" : "AWS::Region" },
                 "Elbs" : [ { "Ref" : "LiveElb" } ]
             }
@@ -543,7 +543,7 @@
                     { "Ref" : "AWS::Region" }, { "Ref" : "AWS::AccountId" }, "function", "elbattachment" ] ] },
                 "AsgA" : { "Fn::If" : [ "CreateAsgA", { "Ref" : "AsgA" }, { "Ref" : "AWS::NoValue" } ] },
                 "AsgB" : { "Fn::If" : [ "CreateAsgB", { "Ref" : "AsgB" }, { "Ref" : "AWS::NoValue" } ] },
-                "ActiveAsg" : { "Ref" : "StagingElbAttachment" },
+                "ActiveAsg" : { "Ref" : "StagingElbAsgAttachment" },
                 "AwsRegion" : { "Ref" : "AWS::Region" },
                 "Elbs" : [ { "Ref" : "StagingElb" } ]
             }
