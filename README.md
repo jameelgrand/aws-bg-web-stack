@@ -2,10 +2,10 @@
 # Blue/green autoscaling web stack
 
 This CloudFormation stack runs two ELBs: `live` and `staging`. Their DNS names are provided as stack outputs. Live
-ELB is used to serve production traffic and staging ELB is used to provide a preview to a new release for testing. The stack also contains two autoscaling groups, `A` and `B`, which can be deployed and attached dynamically to said ELBs, to provide blue/green deployment for new software releases and AMI updates. ELB attachment is managed by a Lambda-backed custom CloudFormation resources.
+ELB is used to serve production traffic and staging ELB is used to provide a preview to a new release for testing. The stack also contains two autoscaling groups, `A` and `B`, which can be deployed and attached dynamically to said ELBs, to provide blue/green deployment for new software releases and AMI updates. ELB attachment is managed by a Lambda-backed custom CloudFormation resource.
 
 ELB attachment is always modified so that new ASG is first attached to the ELB, and then the other ASG is detached
-from the ELB (if it were attached). Hence there will be a small period of time during which both ASGs are attached to the ELB. Maintenance mode is supported, which detaches all ASGs from the ELB, which in turn makes the ELB return `503 Service Unavailable`.
+from the ELB (if it were attached). Hence there will be a short period of time during which both ASGs are attached to the ELB. Maintenance mode is supported, which detaches all ASGs from the ELB, which in turn makes the ELB return `503 Service Unavailable`.
 
 Autoscaling group lifecycle is managed by `AmiX` and `ReleaseX` parameters. If either is empty, said ASG is deleted.
 
